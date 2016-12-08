@@ -1,0 +1,38 @@
+Woodson Mapping Suite Versioning History
+
+-----------------------------------------------------------
+VERSION 2.0
+Released September 9, 2016
+-----------------------------------------------------------
+
+Udpdates to the wpal() function:
+````````````````````````````````
+-The wpal() function now takes an "n" argument, so that you can interpolate to increase (or reduce) the color ramps to n number of colors. This should make the Woodson pallettes more accessible for applications involving categorical data. 
+
+-The wpal() function now also has an argument called "noblack" which will eliminate black from the color ramp. Defualt setting is FALSE (black will remain in the color ramp, if it is present).
+
+-A few more diverging color schemes, as well as a host of new single-color based ramps have been added.
+
+Updates to the wmap() function:
+````````````````````````````````
+-The default setting for whether there will be a histogram at the bottom is now FALSE
+
+-The colors in the histogram now reflect the same color scale of the colors within the map itself. This can also be switched off, and the histogram bars can reflect either a solid color of your choosing, or a different color ramp, if you so desire.
+
+-dist_stats functionality added: you can now add mean, median, standard deviation and quantile lines to the distribution plot to show summary statistics
+
+-You can now add a predefined numeric value that will serve as the midpoint of your diverging color scale. This argument, "diverging_centerpoint", can take any value between the minimum and maximum of your data set, and will serve as the center of your color ramp. This is useful if you have values that are both positive and negative,and want the center of your color ramp to be 0, for example (representing no change). You can use any color ramp that you like with this functionality, but using a diverging one is recommended. 
+
+-Providing the string "each_dimension" to the argument override_scale will allow each map in a series (over time, for example) to have a color ramp based on the min/max value of that particular dimension. 
+
+-Improved syntax and readability of code
+
+histogram_colorstats() function:
+```````````````````````````````````
+Added. Creates a histogram with optional summary statistic vertical lines, with the option to have a color ramp based on the X values, not the Y frequency of the histogram.
+
+Wish list for the future:
+````````````````````````````````
+-Put up on Github for the general plublic
+-Add categorical data visualization options, including an optional bar-chart visualization in place of the histogram
+-add base-font size and style functionality

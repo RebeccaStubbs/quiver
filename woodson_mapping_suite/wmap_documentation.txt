@@ -1,0 +1,110 @@
+  ##############################################################################################################################
+  # ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ Information about this Function~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~
+  #
+  # This is an all-purpose mapping function that plots a chloropleth map in R. This function is designed to make generating
+  # simple, beautiful maps in R a quick and easy process. The aesthetic of these maps are designed to be simple, easy-to-read, 
+  # and have minimal visual distractions. 
+  # 
+  # You can use this function to create a single map of 1 variable, or you can use this function to create a series of maps
+  # that loops through dimensions of a variable (say, years, or types of vaccine coverage). 
+  #
+  # MANDATORY INPUTS:
+  # * chloropleth_map
+  #      A SpatialPolygons object with data as a data.table rather than a data.frame.
+  # * geog_id
+  #     A string-- the name of the column that serves as the geographic ID that specifies the unit of analyisis for your data
+  # * variable
+  #     A string-- the name of the column that will serve as the values you want to plot by your geog_id
+  #      
+  # Optional data/geometry
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~  
+  # * data 
+  #     A data.table that contains the data you want to map (must contain geog_id, and the variable of 
+  #     interest, if specified. If a series dimension and/or series sequence is defined, those must also exist in this data set)
+  # * outline_map
+  #      Another SpatialPolygons object that you want to use the outlines from.
+  #
+  # What elements do you want the plot to contain?
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ 
+  # * histogram
+  #     TRUE/FALSE. If "TRUE", the plot will contain a histogram of the values at the bottom. Default is FALSE.
+  # * dist_stats
+  #     This will generate vertical lines on the histogram plot showing summary statistics. To show this, provide a vector of a combination of numeric values (between 0 and 1) to serve as quantiles, 
+  #     and other summary statistics of interest (current options are "mean" and "sd")
+  #     example: c("mean","sd",.1,.5,.9). Default=NULL.
+  # * return_ map_ object_ only
+  #     If "TRUE", you can assign the function to a variable, and store the map plot portion of this ggplot object so that you can combine it with other graphics at will. Default value is FALSE. This will never return the histogram. 
+  # * destination_folder
+  #     A string file path to a folder you want a PDF created in that will hold your map(s). The pdf will be have a title that is the variable name, plus any additional_ variable_ name_string you specify. If this ps specified, a pdf with the map(s) will be created.
+  #
+  # Inputs for the color scheme of the maps
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ 
+  # * color_ramp
+  #     A list of colors that will serve as the colors you "stretch" through based on your data values. This will default to a color scheme described in woodson pallettes called "Easter to Earth" that displays variation well when there are many geographic units. 
+  #     The fewer geographic units, the simpler you probably want your color ramp to be. See woodson palletes for more options, or create your own.
+  # * outline_color
+  #     What color you want the outline of the additional geography to be (if provided). This can be any color r recognizes--suggestions might be "black","yellow", or "white". Default is white.
+  # * outline_size
+  #     A numeric value that specifies how large you want your white outlines to be if you have specified an outline you want shown on your map. Default value is .1. 
+  # * override_scale
+  #     A vector with two items that will be used to stretch the color ramp instead of the min/max values present in the data set. should be structured "c(min,max)".
+  # * color_ value_ breaks
+  #     How you want the colors "stretched" across the range of minimum/maximum values. 
+  #     Default is NULL/ uniform distribution stretched across the color ramp from the minimum and maximum data values provided. 
+  #  *  diverging_centerpoint
+  #     Accepts any numeric value between the minimum and maximum of your data set. Sets the center of your color scheme to the value 
+  #     defined. This is meant to be used with diverging color schemes. It will override any previously defined color_ value_ breaks. Default="Null"
+  #  *  mean_color
+  #     The color of lines you want to represent mean and standard deviation statistics, used if dist_stats!=NULL. Default="red".
+  # *  quantile_color  
+  #     The color of lines you want to represent the median and quantile lines on the histogram, used if dist_stats!=NULL.Default="black".
+  
+  # Inputs for map titles
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ 
+  # * map_title
+  #     A string that serves as the basis for your map title (if no dimensions are specified, the title will be as it is specified. If a dimension is specified, a phrase constructed using the series 
+  #     dimension and what you are mapping will be added to the plot title [ex="year:1990"]. 
+  # * additional_ variable_ name_ string
+  #     This is an additonal string that you want to add to the name of the PDF to describe any other breakdowns you might be using. For example, if you had to 
+  #     map something by year, age, sex, you would first need to subset your data to be one age/sex group 
+  #    before plotting it out by year. If you subset your data in a loop, you could use this string to specify something along the lines of paste0("age_ ",a," _ sex _",s). NOTE: You need to put in a similar paste0 statement in your map title if you also want this sub-breakdown 
+  #     described in the title of your map, not just the file path to the PDF.
+  # * title_ font_ size
+  #     How large you want the title font to be. No default; default values based on ggthemes tufte()'s default
+  # * title_ font_ face
+  #     Special properties of the title font. Options include "plain", "bold", "italic". Default is plain.
+  #
+  #  Inputs for generating series-maps
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ 
+  # * series_dimension
+  #   A string-- the name of the column that will serve as the variable 
+  #   you loop through to create a series map. For example, year. 
+  # * series_sequence
+  #   A vector c(x,y,z...) that specifies a subset of the series dimensions you want to map. For example, if you have a data set that contains all years between 1980-2014, you can specify that you only want to plot out every other year by setting series sequence to be seq(1980,2014,2). This function will make sure all of the items you speficy actually exist within your series_dimension. 
+  # 
+  # Inputs for map legend
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  # * legend_position
+  #    Where you want the legend to go. Options are "top","bottom","right","left", and "none", which will create a map with no legend 
+  #   (useful if you want to return the map only and add a custom legend yourself). Default is "bottom".
+  # * legend_ font_ size
+  #     How large you want the legend font to be. No default; default values based on ggthemes tufte()'s default.
+  # * legend_ font_ face
+  #     Special properties of the legend font. Options include "plain", "bold", "italic". Default is plain.
+  # * legend_ bar_ width
+  #     How fat you want the color bar that serves as the legend to be. Default value is 0.4.   
+  # * legend_ bar_ length
+  #     How long you want the color bar that serves as the legend to be. Default value is 20.
+  # * legend_ breaks
+  #     An optional vector of the values you want to label in your legend's color scale.
+  # * legend_ labels
+  #     An optional vector of the character strings you want to use to label your legend's color scale (must be same length as legend_breaks)
+  #
+  # Inputs for print statements
+  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~           
+  # * verbose          
+  #            Whether you want print statements from the function (default=F)
+  #
+  # If you have a wishlist for functionalities, and/or would like to contribute to this effort, feel free to contact the author,
+  # Rebecca Stubbs, at stubbsrw@uw.edu.
+  ##############################################################################################################################
