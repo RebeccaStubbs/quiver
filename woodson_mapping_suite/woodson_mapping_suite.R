@@ -11,6 +11,7 @@ library(ggthemes)
 library(maptools)
 library(rje)
 library(extrafont)
+library(classInt)
 
 # For more documentation and examples, see: https://rpubs.com/BeccaStubbs/woodson_examples
 vplayout <- function(x, y) viewport(layout.pos.row = x, layout.pos.col = y)
@@ -34,7 +35,7 @@ vplayout <- function(x, y) viewport(layout.pos.row = x, layout.pos.col = y)
    
    # Defining data/column based variables:
      if(is.null(minimum)){minumum<-min(datavector)}
-     if(is.null(maximum)){maximm<-max(datavector)}
+     if(is.null(maximum)){maximum<-max(datavector)}
 
   # Creating the basic histogram; this will be returned if dist_stats==NULL
     hist<-ggplot() + 
@@ -154,6 +155,10 @@ wmap<-function(chloropleth_map,
                outline_map=NULL, # 
                data=NULL,
                
+               # lines around the chloropleth map layer
+               chlor_lcol=NA,
+               chlor_lsize=0.0,
+               
                # What elements of the map do you want the function to return?
                histogram=FALSE,
                  hist_color=NULL,
@@ -182,13 +187,22 @@ wmap<-function(chloropleth_map,
                series_sequence=NULL,
                
                # Inputs for map Legend
+               legend_name=NULL,
                legend_position="bottom", 
                legend_font_size=NULL,
                legend_font_face="plain",
+               
+               # Inputs for numeric data only
                legend_bar_width=.4,
                legend_bar_length=20,
                legend_breaks=NULL,
                legend_labels=NULL,
+               
+               # Inputs for categorical data only
+               scramble_colors=FALSE,
+               patch_width=.25,
+               patch_height=.25,
+               label_position="right",
                
                # Do you want print statements?
                verbose=F){      
@@ -211,13 +225,27 @@ wmap<-function(chloropleth_map,
             if(!(variable %in% names(data))) stop("That variable does not appear to exist within your data set.")
             setnames(data,geog_id,"geog_id")
         }else{ # If external data is NOT specified
-            if(!(variable %in% names(chloropleth_map@data))){
+          data<-copy(chloropleth_map@data)
+            if(!(variable %in% names(data))){
               stop("That variable does not appear to exist in the data attributes of your spatial object.")
             }
-            data<-copy(chloropleth_map@data)
           }
         setnames(data,variable,"variable")
   
+      # checking whether the data is a factor/ordered: this will make it be mapped with a discrete scale.
+      if (is.factor(data[["variable"]])|is.ordered(data[["variable"]])){discrete_scale<-TRUE}else{discrete_scale<-FALSE}
+      if (is.character(data[["variable"]])){
+        print("Character data being converted to a factor. If you'd like a specific order to your levels, please transform your variable into a factor or ordered data type with appropriate ordering. ")
+        data[,variable:=as.factor(variable)]
+        discrete_scale<-TRUE}
+  
+    # Making sure that there are the right number of colors in the color ramp, by sampling and then scrambling (optional)
+    # the color pallette chosen. 
+      pallette<-colorRampPalette(color_ramp) 
+      color_list<-pallette(nlevels(data[["variable"]]))
+      if(scramble_colors==T){
+          color_list<-color_list[sample(1:length(color_list))]
+      }
   #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   # Defining "map dims"; the levels of the series dimension you want to map
 
@@ -275,109 +303,168 @@ wmap<-function(chloropleth_map,
     # Subsetting the Data
         subset<-copy(chloropleth_map[series_dimension==select_dimension]) # Sub-setting the fortified object to map out 1 layer/dimension (ex: year) of the variable of interest  
     
-    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    # Defining Boundaries and Properties of the Color Ramp
-    
-      # If an override was provided, setting minimum to the first in the list, and maximum to the second in the list provided.
-      if (!is.null(override_scale)){
-        if(is.numeric(override_scale)){
-          minimum<-override_scale[1]
-          maximum<-override_scale[2]
-        }else{
-          if(override_scale=="each_dimension"){
-            maximum<-max(subset[["variable"]])
-            minimum<-min(subset[["variable"]])
-          }else{stop("Any character input other than 'each_dimension', which will produce a color ramp from the min/max of each dimension, is not recognized.")}
-        }
-      }else{ #Otherwise, set the min/max of the scale to the min/max of ALL dimensions of the variable.
-        maximum<-max(chloropleth_map[["variable"]])
-        minimum<-min(chloropleth_map[["variable"]])
-      }
-    
-    # Determining the diverging centerpoint in relation to the min/max, if desired
-      if(!is.null(diverging_centerpoint)){
-          if(diverging_centerpoint>maximum){stop("The diverging centerpoint provided is greater than the maximum value in the data set.")}
-          if(diverging_centerpoint<minimum){stop("The diverging centerpoint provided is less than the minimum value in the data set.")}
-        # Finding what where the specified break point is as a fraction of the total color range 
-          value_range<-maximum-minimum
-          difference_from_minimum<-diverging_centerpoint-minimum
-          break_value<-difference_from_minimum/value_range
-          color_value_breaks<-c(0,break_value,1)
-          if(verbose) print(paste0("Centering color ramp at ",diverging_centerpoint,". Any other color breaks provided have been overridden."))
-      }
-    
-    #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    # Creating the Map Plot in GGPlot2
 
-    map_plot<-ggplot(subset) + 
-      geom_polygon(aes(x=long, y=lat, group=group, fill=variable), color=NA, size=0.0) +
-      scale_x_continuous("", breaks=NULL) + 
-      scale_y_continuous("", breaks=NULL) + 
-      coord_fixed(ratio=1)+
-      labs(title = main_map_title) +
-      theme_tufte()
+    #####################
+    # If Data is Numeric
+    #####################
     
-    #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    # Adding the color ramp!
-    
-      if(!is.null(legend_breaks)&!is.null(legend_labels)){
-        map_plot<-map_plot+scale_fill_gradientn(colours=rev(color_ramp), 
-                                                limits=c(minimum, maximum),
-                                                values=color_value_breaks, 
-                                                breaks=legend_breaks, 
-                                                labels=legend_labels)
-        }else{
-        map_plot<-map_plot+scale_fill_gradientn(colours=rev(color_ramp), 
-                                                limits=c(minimum, maximum), 
-                                                values=color_value_breaks) 
-        } # Why have this if-clause? If the value of legend_breaks is NULL, then you end up not getting a legend at all. Lame!
-    
-    #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    # Adding a legend
-    if (legend_position %in% c("bottom","top")){
-      map_plot<-map_plot+
-                guides(fill=guide_colourbar(title=" ", barheight=legend_bar_width, barwidth=legend_bar_length, label=TRUE, ticks=FALSE )) + 
-                theme(legend.position=legend_position)} 
-    if (legend_position %in% c("right","left")){
-      map_plot<-map_plot+guides(fill=guide_colourbar(title=" ", barheight=legend_bar_length, barwidth=legend_bar_width, label=TRUE, ticks=FALSE )) +
-                theme(legend.position=legend_position)} 
-    if (legend_position %in% c("none")){
-      map_plot<-map_plot+theme(legend.position="none")
-    }
-    
-    #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    # Adding Title and Legend Formatting
-      map_plot<-map_plot +  theme(plot.title = element_text(size = title_font_size,  face=title_font_face))+ #Adding custom title that might override the legend stuff
-        theme(legend.text = element_text(size = legend_font_size, face=legend_font_face))
-    
-    #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    # Adding Outline Map, if desired
-      if (!is.null(outline_map)){
-        map_plot<-map_plot+geom_path(data = outline_map, 
-                                     aes(x = long, y = lat, group = group),
-                                     color = outline_color, size = outline_size)} 
-    
-    #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    ## If you just want the map plot as an object you can pass to other things...
-    if (return_map_object_only==TRUE){return(map_plot)}else{
-      
-      
-    #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    # Making a histogram of the distribution of that dimension's values
-      
-      if (histogram==TRUE){ # If you have specified that you do want the histogram at the bottom:
-        if(!is.null(hist_color)){hist_color_ramp<-hist_color}else{hist_color_ramp<-color_ramp}
-        
-        histo<-histogram_colorstats(datavector=subset$variable,
-                                    color_ramp=hist_color_ramp,
-                                    minimum=minimum,
-                                    maximum=maximum,
-                                    color_value_breaks=color_value_breaks,
-                                    dist_stats=dist_stats,
-                                    mean_color=mean_color,
-                                    quantile_color=quantile_color)
+        if(discrete_scale==F){ # If the data is numeric... 
+          # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+          # Defining Boundaries and Properties of the Color Ramp
           
-      }# If histogam==T
+          # If an override was provided, setting minimum to the first in the list, and maximum to the second in the list provided.
+          if (!is.null(override_scale)){
+            if(is.numeric(override_scale)){
+              minimum<-override_scale[1]
+              maximum<-override_scale[2]
+            }else{
+              if(override_scale=="each_dimension"){
+                maximum<-max(subset[["variable"]])
+                minimum<-min(subset[["variable"]])
+              }else{stop("Any character input other than 'each_dimension', which will produce a color ramp from the min/max of each dimension, is not recognized.")}
+            }
+          }else{ #Otherwise, set the min/max of the scale to the min/max of ALL dimensions of the variable.
+            maximum<-max(chloropleth_map[["variable"]])
+            minimum<-min(chloropleth_map[["variable"]])
+          }
+        
+        # Determining the diverging centerpoint in relation to the min/max, if desired
+          if(!is.null(diverging_centerpoint)){
+              if(diverging_centerpoint>maximum){stop("The diverging centerpoint provided is greater than the maximum value in the data set.")}
+              if(diverging_centerpoint<minimum){stop("The diverging centerpoint provided is less than the minimum value in the data set.")}
+            # Finding what where the specified break point is as a fraction of the total color range 
+              value_range<-maximum-minimum
+              difference_from_minimum<-diverging_centerpoint-minimum
+              break_value<-difference_from_minimum/value_range
+              color_value_breaks<-c(0,break_value,1)
+              if(verbose) print(paste0("Centering color ramp at ",diverging_centerpoint,". Any other color breaks provided have been overridden."))
+          }
+        
+        #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        # Creating the Map Plot in GGPlot2
+    
+        map_plot<-ggplot(subset) + 
+          geom_polygon(aes(x=long, y=lat, group=group, fill=variable), color=chlor_lcol, size=chlor_lsize) +
+          scale_x_continuous("", breaks=NULL) + 
+          scale_y_continuous("", breaks=NULL) + 
+          coord_fixed(ratio=1)+
+          labs(title = main_map_title) +
+          theme_tufte()
+        
+        #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        # Adding the color ramp!
+        
+          if(!is.null(legend_breaks)&!is.null(legend_labels)){
+            map_plot<-map_plot+scale_fill_gradientn(colours=rev(color_ramp), 
+                                                    limits=c(minimum, maximum),
+                                                    values=color_value_breaks, 
+                                                    breaks=legend_breaks, 
+                                                    labels=legend_labels)
+            }else{
+            map_plot<-map_plot+scale_fill_gradientn(colours=rev(color_ramp), 
+                                                    limits=c(minimum, maximum), 
+                                                    values=color_value_breaks) 
+            } # Why have this if-clause? If the value of legend_breaks is NULL, then you end up not getting a legend at all. Lame!
+        
+        #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        # Adding a legend
+        if (legend_position %in% c("bottom","top")){
+          map_plot<-map_plot+
+                    guides(fill=guide_colourbar(title=legend_name, title.position="top", barheight=legend_bar_width, barwidth=legend_bar_length, label=TRUE, ticks=FALSE )) + 
+                    theme(legend.position=legend_position,legend.title=element_text(size=legend_font_size))} 
+        if (legend_position %in% c("right","left")){
+          map_plot<-map_plot+
+                    guides(fill=guide_colourbar(title=legend_name, title.position="top", barheight=legend_bar_length, barwidth=legend_bar_width, label=TRUE, ticks=FALSE )) +
+                    theme(legend.position=legend_position,legend.title=element_text(size=legend_font_size))} 
+        if (legend_position %in% c("none")){
+          map_plot<-map_plot+theme(legend.position="none")
+        }
+        
+        
+        #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        # Making a histogram of the distribution of that dimension's values
+        
+        if (histogram==TRUE){ # If you have specified that you do want the histogram at the bottom:
+          if(!is.null(hist_color)){hist_color_ramp<-hist_color}else{hist_color_ramp<-color_ramp}
+          
+          histo<-histogram_colorstats(datavector=subset$variable,
+                                      color_ramp=hist_color_ramp,
+                                      minimum=minimum,
+                                      maximum=maximum,
+                                      color_value_breaks=color_value_breaks,
+                                      dist_stats=dist_stats,
+                                      mean_color=mean_color,
+                                      quantile_color=quantile_color)
+          
+        }# If histogam==T
+        
+        } # if data is numeric
+        
+    
+    #################################
+    # If Data is Categorical/Ordinal
+    #################################
+    
+    if (discrete_scale==T){
+        map_plot<-ggplot(subset) + 
+          geom_polygon(aes(x=long, y=lat, group=group, fill=variable), color=chlor_lcol, size=chlor_lsize) +
+          scale_x_continuous("", breaks=NULL) + 
+          scale_y_continuous("", breaks=NULL) + 
+          coord_fixed(ratio=1)+
+          labs(title = main_map_title) +
+          theme_tufte()
+        
+        #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        # Adding the color ramp!
+    
+          map_plot<-map_plot+scale_fill_manual(values=color_list,drop = FALSE)
+          
+        #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        # Adding a legend
+          map_plot<-map_plot+guides(fill=guide_legend(title=legend_name,
+                                                      keywidth=patch_width,
+                                                      keyheight=patch_height,
+                                                      label.position = label_position))+
+            theme(legend.position=legend_position)
+        
+        if (legend_position %in% c("none")){
+          map_plot<-map_plot+theme(legend.position="none")
+        }
+        
+        
+        # Adding a "histogram" (really, in this case, a bar chart) to the bottom of the image
+        #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        if (histogram==TRUE){ # If you have specified that you do want the histogram at the bottom:          
+          #histo<-qplot(variable, data=subset, geom="bar", fill=variable)+scale_fill_manual(values=color_list)
+          histo<-ggplot(na.omit(subset), aes(x=variable, fill=variable)) +
+            geom_bar() + 
+            labs(x=NULL, y=NULL) +
+            scale_fill_manual(values=color_list)+theme_tufte()+theme(legend.position="none",
+                                                                     axis.ticks.x=element_blank(),
+                                                                     axis.ticks.y=element_blank())
+        }# If histogam==T
+        
+    } # if it's ordinal/categorical
+    
+    #######################################
+    # For All Data Types
+    #######################################
+    
+        #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        # Adding Title and Legend Formatting
+          map_plot<-map_plot +  theme(plot.title = element_text(size = title_font_size,  face=title_font_face))+ #Adding custom title that might override the legend stuff
+            theme(legend.text = element_text(size = legend_font_size, face=legend_font_face))
+        
+        #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        # Adding Outline Map, if desired
+          if (!is.null(outline_map)){
+            map_plot<-map_plot+geom_path(data = outline_map, 
+                                         aes(x = long, y = lat, group = group),
+                                         color = outline_color, size = outline_size)} 
+        
+        #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        ## If you just want the map plot as an object you can pass to other things...
+        if (return_map_object_only==TRUE){return(map_plot)}else{
       
       #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
       # Printing the Plot:
@@ -409,7 +496,7 @@ plot_colors<-function(color_list,color_list_name=NULL){
   data_table<-data.table(data.frame(x=letters[1:length(unique(color_list))]))
   data_table[, colors:=unique(color_list)]
   data_table[, bar_height:=1]
-  p<-ggplot(data_table,aes(x=colors))+geom_bar(aes(fill=colors, stat="identity"))+theme_tufte()+labs(x=paste(unique(color_list), collapse=', '))+
+  p<-ggplot(data_table,aes(x=colors))+geom_bar(aes(fill=colors, stat="bin"))+theme_tufte()+labs(x=paste(unique(color_list), collapse=', '))+
     theme(
       legend.position = "none",
       axis.title.y = element_blank(),
